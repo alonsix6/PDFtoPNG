@@ -1,15 +1,32 @@
 import path from 'path';
 import { getBrowser } from './browser.js';
 import { waitForSlideReady } from './waitStrategies.js';
+import { postProcessPng } from './postProcess.js';
 import { ensureDir } from '../utils/cleanup.js';
 import logger from '../utils/logger.js';
 
 const SLIDE_TIMEOUT = 30_000;
-const DEVICE_SCALE_FACTOR = 2;
+const DEVICE_SCALE_FACTOR = 3;
 const MAX_VIEWPORT_DIM = 8192;
 
 function padNumber(num, length = 3) {
   return String(num).padStart(length, '0');
+}
+
+/**
+ * Inject CSS for maximum font rendering quality.
+ * Grayscale antialiasing looks crisp on any display and in Canva.
+ */
+async function injectQualityCSS(page) {
+  await page.addStyleTag({
+    content: `
+      *, *::before, *::after {
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+        text-rendering: optimizeLegibility !important;
+      }
+    `,
+  });
 }
 
 /**
@@ -186,6 +203,7 @@ async function captureModeA({
   logger.info({ url }, 'Mode A: navigating to entry file');
   await page.goto(url, { waitUntil: 'load', timeout: SLIDE_TIMEOUT });
   await waitForSlideReady(page);
+  await injectQualityCSS(page);
 
   // Count slide sections
   const slideCount = await page.evaluate(() => {
@@ -246,11 +264,13 @@ async function captureModeA({
     await waitForSlideReady(page);
 
     const outputPath = path.join(outputDir, `slide-${padNumber(i + 1)}.png`);
-    await page.screenshot({
-      path: outputPath,
+    const pngBuffer = await page.screenshot({
       type: 'png',
       clip: { x: 0, y: 0, width: vw, height: vh },
+      animations: 'disabled',
+      caret: 'hide',
     });
+    await postProcessPng(pngBuffer, outputPath);
 
     logger.debug({ slide: i + 1, total: slideCount }, 'Captured slide');
     onProgress(i + 1, slideCount);
@@ -304,6 +324,7 @@ async function captureModeB({
     await page.setViewportSize({ width: dims.width, height: dims.slideHeight });
     await page.goto(url, { waitUntil: 'load', timeout: SLIDE_TIMEOUT });
     await waitForSlideReady(page);
+    await injectQualityCSS(page);
 
     for (let s = 0; s < dims.slideCount; s++) {
       // Scroll to the correct position for this slide
@@ -314,11 +335,13 @@ async function captureModeB({
       await page.waitForTimeout(100);
 
       const outputPath = path.join(outputDir, `slide-${padNumber(globalSlideIndex + 1)}.png`);
-      await page.screenshot({
-        path: outputPath,
+      const pngBuffer = await page.screenshot({
         type: 'png',
         clip: { x: 0, y: 0, width: dims.width, height: dims.slideHeight },
+        animations: 'disabled',
+        caret: 'hide',
       });
+      await postProcessPng(pngBuffer, outputPath);
 
       globalSlideIndex++;
       logger.debug(
