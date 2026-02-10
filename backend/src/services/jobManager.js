@@ -13,6 +13,7 @@ export const jobManager = {
     const job = {
       id,
       status: 'pending',
+      phase: null,
       progress: 0,
       total: 0,
       resolution,
@@ -35,6 +36,14 @@ export const jobManager = {
     const job = jobs.get(jobId);
     if (job) {
       job.status = status;
+    }
+  },
+
+  updatePhase(jobId, phase) {
+    const job = jobs.get(jobId);
+    if (job) {
+      job.phase = phase;
+      logger.info({ jobId, phase }, 'Job phase updated');
     }
   },
 

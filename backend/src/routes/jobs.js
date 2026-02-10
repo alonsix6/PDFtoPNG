@@ -41,10 +41,9 @@ router.post('/render', upload.single('zipFile'), (req, res) => {
     const jobId = jobManager.createJob(resolution);
 
     // Fire and forget — process asynchronously
+    // Note: decrementActive is handled in processJob's finally block
     processJob(jobId, req.file.buffer, resolution).catch((err) => {
       logger.error({ err, jobId }, 'Job processing failed');
-      jobManager.failJob(jobId, err.message);
-      jobManager.decrementActive();
     });
 
     res.status(202).json({ jobId, status: 'pending' });
@@ -64,6 +63,7 @@ router.get('/jobs/:id', (req, res) => {
   res.json({
     jobId: job.id,
     status: job.status,
+    phase: job.phase,
     progress: { current: job.progress, total: job.total },
     error: job.error,
     createdAt: job.createdAt,
@@ -123,6 +123,7 @@ async function processJob(jobId, zipBuffer, resolution) {
     }, config.jobTimeoutMs);
 
     // Extract ZIP
+    jobManager.updatePhase(jobId, 'extracting');
     await ensureDir(extractDir);
     await ensureDir(outputDir);
 
@@ -131,12 +132,14 @@ async function processJob(jobId, zipBuffer, resolution) {
     zipBuffer = null;
 
     // Detect slide mode
+    jobManager.updatePhase(jobId, 'detecting');
     const slideInfo = await detectSlides(rootDir);
 
     // Start static server
     staticServer = await startStaticServer(rootDir);
 
     // Capture slides
+    jobManager.updatePhase(jobId, 'rendering');
     await captureSlides({
       mode: slideInfo.mode,
       htmlFiles: slideInfo.htmlFiles,
@@ -150,6 +153,7 @@ async function processJob(jobId, zipBuffer, resolution) {
     });
 
     // Package output PNGs into ZIP
+    jobManager.updatePhase(jobId, 'packaging');
     await createOutputZip(outputDir, outputZipPath);
 
     jobManager.completeJob(jobId, outputZipPath);
