@@ -66,11 +66,20 @@ function detectRootFolder(files, destDir) {
   if (files.length === 0) return destDir;
 
   const topLevelDirs = new Set();
+  let hasRootFiles = false;
+
   for (const file of files) {
     const parts = file.split('/');
     if (parts.length > 1) {
       topLevelDirs.add(parts[0]);
+    } else {
+      hasRootFiles = true;
     }
+  }
+
+  // If any file sits at the root level, destDir is the root
+  if (hasRootFiles) {
+    return destDir;
   }
 
   // If all files are under a single top-level directory, use it as the root
