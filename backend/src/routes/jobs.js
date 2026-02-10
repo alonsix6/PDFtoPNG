@@ -19,7 +19,7 @@ const router = Router();
 router.post('/render', upload.single('zipFile'), (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No ZIP file provided' });
+      return res.status(400).json({ error: 'No file provided' });
     }
 
     if (!jobManager.canAcceptJob()) {
@@ -33,7 +33,7 @@ router.post('/render', upload.single('zipFile'), (req, res) => {
 
     // Fire and forget — process asynchronously
     // Note: decrementActive is handled in processJob's finally block
-    processJob(jobId, req.file.buffer).catch((err) => {
+    processJob(jobId, req.file.buffer, req.file.originalname).catch((err) => {
       logger.error({ err, jobId }, 'Job processing failed');
     });
 
@@ -93,7 +93,7 @@ router.get('/jobs/:id/download', (req, res) => {
   stream.pipe(res);
 });
 
-async function processJob(jobId, zipBuffer) {
+async function processJob(jobId, fileBuffer, originalName) {
   jobManager.incrementActive();
   jobManager.updateStatus(jobId, 'processing');
 
@@ -115,14 +115,26 @@ async function processJob(jobId, zipBuffer) {
       jobManager.failJob(jobId, 'Job timed out');
     }, config.jobTimeoutMs);
 
-    // Extract ZIP
+    // Extract/prepare input files
     jobManager.updatePhase(jobId, 'extracting');
     await ensureDir(extractDir);
     await ensureDir(outputDir);
 
-    const { rootDir } = await extractZip(zipBuffer, extractDir);
+    let rootDir;
+    const isHtml = /\.html?$/i.test(originalName);
+
+    if (isHtml) {
+      // Standalone HTML file — write directly to input dir
+      await fs.promises.writeFile(path.join(extractDir, originalName), fileBuffer);
+      rootDir = extractDir;
+      logger.info({ originalName }, 'Standalone HTML file written to input dir');
+    } else {
+      // ZIP file — extract as before
+      const result = await extractZip(fileBuffer, extractDir);
+      rootDir = result.rootDir;
+    }
     // Release buffer from memory
-    zipBuffer = null;
+    fileBuffer = null;
 
     // Detect slide mode
     jobManager.updatePhase(jobId, 'detecting');

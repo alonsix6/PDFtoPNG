@@ -7,15 +7,19 @@ const upload = multer({
     fileSize: config.maxFileSizeMb * 1024 * 1024,
   },
   fileFilter: (_req, file, cb) => {
+    const name = file.originalname.toLowerCase();
     if (
       file.mimetype === 'application/zip' ||
       file.mimetype === 'application/x-zip-compressed' ||
       file.mimetype === 'application/octet-stream' ||
-      file.originalname.toLowerCase().endsWith('.zip')
+      name.endsWith('.zip') ||
+      file.mimetype === 'text/html' ||
+      name.endsWith('.html') ||
+      name.endsWith('.htm')
     ) {
       cb(null, true);
     } else {
-      cb(new Error('Only ZIP files are allowed'));
+      cb(new Error('Only ZIP or HTML files are allowed'));
     }
   },
 });

@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileArchive, X } from 'lucide-react';
+import { Upload, FileArchive, FileCode, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50MB
@@ -24,7 +24,7 @@ export default function UploadZone({ file, onFileSelect, onFileRemove }) {
   const { getRootProps, getInputProps, isDragActive, fileRejections } =
     useDropzone({
       onDrop,
-      accept: { 'application/zip': ['.zip'] },
+      accept: { 'application/zip': ['.zip'], 'text/html': ['.html', '.htm'] },
       maxSize: MAX_SIZE,
       maxFiles: 1,
       disabled: !!file,
@@ -35,7 +35,7 @@ export default function UploadZone({ file, onFileSelect, onFileRemove }) {
     ? rejection.code === 'file-too-large'
       ? 'File exceeds 50MB limit'
       : rejection.code === 'file-invalid-type'
-        ? 'Only ZIP files are accepted'
+        ? 'Only ZIP or HTML files are accepted'
         : rejection.message
     : null;
 
@@ -72,11 +72,11 @@ export default function UploadZone({ file, onFileSelect, onFileRemove }) {
               <div className="text-center">
                 <p className="text-white font-medium">
                   {isDragActive
-                    ? 'Drop your ZIP here'
-                    : 'Drop your ZIP here or click to browse'}
+                    ? 'Drop your file here'
+                    : 'Drop your file here or click to browse'}
                 </p>
                 <p className="text-text-secondary text-sm mt-1">
-                  Accepted: .zip (max 50MB)
+                  Accepted: .zip, .html (max 50MB)
                 </p>
               </div>
             </div>
@@ -90,7 +90,11 @@ export default function UploadZone({ file, onFileSelect, onFileRemove }) {
             className="bg-surface-dark border border-surface-border rounded-card p-4 flex items-center gap-4"
           >
             <div className="bg-brand-green/10 rounded-lg p-3">
-              <FileArchive className="w-6 h-6 text-brand-green" />
+              {file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm') ? (
+                <FileCode className="w-6 h-6 text-brand-green" />
+              ) : (
+                <FileArchive className="w-6 h-6 text-brand-green" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-medium truncate">{file.name}</p>
