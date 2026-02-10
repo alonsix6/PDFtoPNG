@@ -31,49 +31,117 @@ async function injectQualityCSS(page) {
 
 /**
  * Auto-detect the slide dimensions and number of stacked pages from the HTML.
- * Opens with a tall viewport to measure total content height, then determines
- * if the content is a stack of equally-sized pages.
+ *
+ * Strategy priority:
+ * 1. @page { size: WxH } CSS rule — most reliable for HTML presentations
+ * 2. Stacked equal-height children — common slide layout pattern
+ * 3. Aspect ratio heuristic (16:9, 4:3, 16:10) — last resort for multi-page
+ * 4. Single full-page capture — ultimate fallback
  */
 async function detectSlideDimensions(page) {
-  // Measure the intrinsic content dimensions
+  // Strategy 1: Parse @page CSS rule and count slide elements
+  const pageRuleInfo = await page.evaluate(() => {
+    let pageWidth = 0;
+    let pageHeight = 0;
+
+    // Read @page { size } from stylesheets via CSSOM
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) {
+          if (rule instanceof CSSPageRule) {
+            const match = rule.cssText.match(
+              /@page\s*\{[^}]*size:\s*(\d+(?:\.\d+)?)px\s+(\d+(?:\.\d+)?)px/
+            );
+            if (match) {
+              pageWidth = Math.round(parseFloat(match[1]));
+              pageHeight = Math.round(parseFloat(match[2]));
+            }
+          }
+        }
+      } catch {
+        // Skip cross-origin or inaccessible stylesheets
+      }
+    }
+
+    if (!pageWidth || !pageHeight) {
+      return null;
+    }
+
+    // Count slides: elements with page-break-after:always matching @page dimensions
+    const allElements = document.body.querySelectorAll('*');
+    let slideCount = 0;
+    for (const el of allElements) {
+      const style = getComputedStyle(el);
+      const hasPageBreak =
+        style.pageBreakAfter === 'always' || style.breakAfter === 'page';
+      const matchesWidth = Math.abs(el.offsetWidth - pageWidth) <= 4;
+      const matchesHeight = Math.abs(el.offsetHeight - pageHeight) <= 4;
+
+      if (hasPageBreak && matchesWidth && matchesHeight) {
+        slideCount++;
+      }
+    }
+
+    // Fallback: if no page-break elements found, count visible body children
+    // that match @page dimensions
+    if (slideCount === 0) {
+      const children = Array.from(document.body.children).filter((el) => {
+        const style = getComputedStyle(el);
+        return (
+          style.display !== 'none' &&
+          Math.abs(el.offsetWidth - pageWidth) <= 4 &&
+          Math.abs(el.offsetHeight - pageHeight) <= 4
+        );
+      });
+      slideCount = children.length;
+    }
+
+    return { pageWidth, pageHeight, slideCount: Math.max(slideCount, 1) };
+  });
+
+  if (pageRuleInfo) {
+    const { pageWidth, pageHeight, slideCount } = pageRuleInfo;
+    const width = Math.min(Math.max(pageWidth, 320), MAX_VIEWPORT_DIM);
+    const slideHeight = Math.min(Math.max(pageHeight, 200), MAX_VIEWPORT_DIM);
+
+    logger.info(
+      { strategy: 'page-rule', width, slideHeight, slideCount },
+      'Detected slide dimensions from @page CSS rule'
+    );
+
+    return { width, slideHeight, slideCount, totalHeight: slideHeight * slideCount };
+  }
+
+  // --- Fallback strategies (no @page rule found) ---
+
+  // Measure intrinsic content dimensions
   const dims = await page.evaluate(() => {
     const body = document.body;
     const html = document.documentElement;
 
-    // Content width: use the natural width of the content
     const contentWidth = Math.max(
-      body.scrollWidth,
-      html.scrollWidth,
-      body.offsetWidth,
-      html.offsetWidth,
-      body.clientWidth,
-      html.clientWidth
+      body.scrollWidth, html.scrollWidth,
+      body.offsetWidth, html.offsetWidth,
+      body.clientWidth, html.clientWidth
     );
 
-    // Content height: full scrollable height
     const contentHeight = Math.max(
-      body.scrollHeight,
-      html.scrollHeight,
-      body.offsetHeight,
-      html.offsetHeight
+      body.scrollHeight, html.scrollHeight,
+      body.offsetHeight, html.offsetHeight
     );
 
     return { contentWidth, contentHeight };
   });
 
-  logger.info(dims, 'Raw content dimensions detected');
+  logger.info(dims, 'Raw content dimensions detected (no @page rule)');
 
-  // Clamp to reasonable bounds
   const width = Math.min(Math.max(dims.contentWidth, 320), MAX_VIEWPORT_DIM);
   const totalHeight = Math.min(Math.max(dims.contentHeight, 200), 100000);
 
-  // Try to detect stacked pages: look for repeating sections of equal height.
-  // Common approach: body's direct children are the pages, all with the same height.
+  // Strategy 2: Stacked equal-height children
   const pageInfo = await page.evaluate(() => {
-    // Strategy 1: check direct children of body
     const children = Array.from(document.body.children).filter((el) => {
       const style = window.getComputedStyle(el);
-      // Ignore hidden/zero-height elements
       return style.display !== 'none' && el.offsetHeight > 50;
     });
 
@@ -81,7 +149,6 @@ async function detectSlideDimensions(page) {
       return { strategy: 'single', childCount: children.length, childHeight: 0 };
     }
 
-    // Check if all children have similar height (within 2px tolerance)
     const heights = children.map((el) => el.offsetHeight);
     const firstHeight = heights[0];
     const allSameHeight = heights.every((h) => Math.abs(h - firstHeight) <= 2);
@@ -94,8 +161,6 @@ async function detectSlideDimensions(page) {
       };
     }
 
-    // Strategy 2: check if total height is a clean multiple of viewport-like height
-    // (for cases where slides are laid out without wrapper elements)
     return { strategy: 'none', childCount: children.length, childHeight: 0 };
   });
 
@@ -105,11 +170,10 @@ async function detectSlideDimensions(page) {
   let slideCount;
 
   if (pageInfo.strategy === 'stacked-children') {
-    // Direct children are the pages
     slideHeight = pageInfo.childHeight;
     slideCount = pageInfo.childCount;
   } else {
-    // Try to detect via common aspect ratios (16:9, 4:3, 16:10)
+    // Strategy 3: Aspect ratio heuristic
     const ratios = [16 / 9, 4 / 3, 16 / 10];
     let bestMatch = null;
 
@@ -118,7 +182,6 @@ async function detectSlideDimensions(page) {
       if (expectedHeight > 0 && totalHeight >= expectedHeight) {
         const pages = Math.round(totalHeight / expectedHeight);
         const remainder = Math.abs(totalHeight - pages * expectedHeight);
-        // Allow up to 10px tolerance per page
         if (remainder <= pages * 10) {
           if (!bestMatch || Math.abs(remainder) < Math.abs(bestMatch.remainder)) {
             bestMatch = { height: expectedHeight, count: pages, remainder };
@@ -131,13 +194,12 @@ async function detectSlideDimensions(page) {
       slideHeight = bestMatch.height;
       slideCount = bestMatch.count;
     } else {
-      // Fallback: treat as a single full-page capture
+      // Strategy 4: Single full-page capture
       slideHeight = totalHeight;
       slideCount = 1;
     }
   }
 
-  // Clamp slide dimensions
   slideHeight = Math.min(slideHeight, MAX_VIEWPORT_DIM);
 
   logger.info(
