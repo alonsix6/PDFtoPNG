@@ -5,12 +5,11 @@ const api = axios.create({
   timeout: 120_000,
 });
 
-export async function submitRenderJob(file, resolution, onUploadProgress) {
+export async function submitRenderJob(file, onUploadProgress) {
   const formData = new FormData();
   formData.append('zipFile', file);
-  formData.append('resolution', resolution);
 
-  console.log('[SlideForge] Uploading:', file.name, `(${(file.size / 1024 / 1024).toFixed(1)}MB)`, resolution);
+  console.log('[SlideForge] Uploading:', file.name, `(${(file.size / 1024 / 1024).toFixed(1)}MB)`);
 
   const { data } = await api.post('/api/render', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

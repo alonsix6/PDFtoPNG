@@ -15,8 +15,6 @@ import logger from '../utils/logger.js';
 
 const router = Router();
 
-const VALID_RESOLUTIONS = ['4k', 'hd'];
-
 // POST /api/render
 router.post('/render', upload.single('zipFile'), (req, res) => {
   try {
@@ -31,18 +29,11 @@ router.post('/render', upload.single('zipFile'), (req, res) => {
       });
     }
 
-    const resolution = (req.body.resolution || 'hd').toLowerCase();
-    if (!VALID_RESOLUTIONS.includes(resolution)) {
-      return res.status(400).json({
-        error: `Invalid resolution. Must be one of: ${VALID_RESOLUTIONS.join(', ')}`,
-      });
-    }
-
-    const jobId = jobManager.createJob(resolution);
+    const jobId = jobManager.createJob();
 
     // Fire and forget — process asynchronously
     // Note: decrementActive is handled in processJob's finally block
-    processJob(jobId, req.file.buffer, resolution).catch((err) => {
+    processJob(jobId, req.file.buffer).catch((err) => {
       logger.error({ err, jobId }, 'Job processing failed');
     });
 
@@ -87,7 +78,7 @@ router.get('/jobs/:id/download', (req, res) => {
   }
 
   const timestamp = Date.now();
-  const filename = `slideforge-${job.resolution}-${timestamp}.zip`;
+  const filename = `slideforge-${timestamp}.zip`;
 
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -102,7 +93,7 @@ router.get('/jobs/:id/download', (req, res) => {
   stream.pipe(res);
 });
 
-async function processJob(jobId, zipBuffer, resolution) {
+async function processJob(jobId, zipBuffer) {
   jobManager.incrementActive();
   jobManager.updateStatus(jobId, 'processing');
 
@@ -145,7 +136,6 @@ async function processJob(jobId, zipBuffer, resolution) {
       htmlFiles: slideInfo.htmlFiles,
       entryFile: slideInfo.entryFile,
       staticServerUrl: staticServer.url,
-      resolution,
       outputDir,
       onProgress: (current, total) => {
         jobManager.updateProgress(jobId, current, total);

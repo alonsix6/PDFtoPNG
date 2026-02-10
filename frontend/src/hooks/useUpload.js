@@ -33,7 +33,6 @@ function classifyError(err) {
 
 export function useUpload() {
   const [file, setFile] = useState(null);
-  const [resolution, setResolution] = useState('hd');
   const [jobId, setJobId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -48,10 +47,10 @@ export function useUpload() {
     setError(null);
     setErrorType(null);
 
-    console.log('[SlideForge] Starting upload:', file.name, `(${(file.size / 1024 / 1024).toFixed(1)}MB)`, resolution);
+    console.log('[SlideForge] Starting upload:', file.name, `(${(file.size / 1024 / 1024).toFixed(1)}MB)`);
 
     try {
-      const data = await submitRenderJob(file, resolution, (pct) => {
+      const data = await submitRenderJob(file, (pct) => {
         setUploadProgress(pct);
       });
       console.log('[SlideForge] Job created:', data.jobId);
@@ -64,7 +63,7 @@ export function useUpload() {
     } finally {
       setUploading(false);
     }
-  }, [file, resolution]);
+  }, [file]);
 
   const reset = useCallback(() => {
     console.log('[SlideForge] Reset');
@@ -79,8 +78,6 @@ export function useUpload() {
   return {
     file,
     setFile,
-    resolution,
-    setResolution,
     jobId,
     uploading,
     uploadProgress,

@@ -2,7 +2,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 import Layout from './components/Layout';
 import UploadZone from './components/UploadZone';
-import ResolutionPicker from './components/ResolutionPicker';
 import JobProgress from './components/JobProgress';
 import DownloadResult from './components/DownloadResult';
 import ErrorDisplay from './components/ErrorDisplay';
@@ -16,8 +15,6 @@ export default function App() {
   const {
     file,
     setFile,
-    resolution,
-    setResolution,
     jobId,
     uploading,
     uploadProgress,
@@ -74,8 +71,6 @@ export default function App() {
               onFileSelect={setFile}
               onFileRemove={() => setFile(null)}
             />
-
-            <ResolutionPicker value={resolution} onChange={setResolution} />
 
             {showUploading && uploadProgress > 0 ? (
               <div className="space-y-3">
