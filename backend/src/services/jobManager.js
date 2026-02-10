@@ -8,7 +8,7 @@ let activeCount = 0;
 let cleanupInterval = null;
 
 export const jobManager = {
-  createJob(resolution) {
+  createJob() {
     const id = nanoid(12);
     const job = {
       id,
@@ -16,7 +16,6 @@ export const jobManager = {
       phase: null,
       progress: 0,
       total: 0,
-      resolution,
       error: null,
       createdAt: new Date().toISOString(),
       completedAt: null,
@@ -24,7 +23,7 @@ export const jobManager = {
       tempDir: null,
     };
     jobs.set(id, job);
-    logger.info({ jobId: id, resolution }, 'Job created');
+    logger.info({ jobId: id }, 'Job created');
     return id;
   },
 
