@@ -7,7 +7,7 @@ const config = Object.freeze({
   maxFileSizeMb: parseInt(process.env.MAX_FILE_SIZE_MB || '50', 10),
   jobTtlMs: parseInt(process.env.JOB_TTL_MINUTES || '30', 10) * 60 * 1000,
   maxConcurrentJobs: parseInt(process.env.MAX_CONCURRENT_JOBS || '3', 10),
-  jobTimeoutMs: parseInt(process.env.JOB_TIMEOUT_MINUTES || '5', 10) * 60 * 1000,
+  jobTimeoutMs: parseInt(process.env.JOB_TIMEOUT_MINUTES || '15', 10) * 60 * 1000,
   logLevel: process.env.LOG_LEVEL || 'info',
 });
 

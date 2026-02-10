@@ -106,10 +106,12 @@ async function processJob(jobId, zipBuffer) {
 
   let staticServer = null;
   let timeout = null;
+  const abortController = new AbortController();
 
   try {
-    // Set job timeout
+    // Set job timeout — aborts rendering and marks job as failed
     timeout = setTimeout(() => {
+      abortController.abort();
       jobManager.failJob(jobId, 'Job timed out');
     }, config.jobTimeoutMs);
 
@@ -137,6 +139,7 @@ async function processJob(jobId, zipBuffer) {
       entryFile: slideInfo.entryFile,
       staticServerUrl: staticServer.url,
       outputDir,
+      signal: abortController.signal,
       onProgress: (current, total) => {
         jobManager.updateProgress(jobId, current, total);
       },
