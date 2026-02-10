@@ -154,6 +154,7 @@ export async function captureSlides({
   entryFile,
   staticServerUrl,
   outputDir,
+  signal,
   onProgress,
 }) {
   await ensureDir(outputDir);
@@ -173,6 +174,7 @@ export async function captureSlides({
         entryFile,
         staticServerUrl,
         outputDir,
+        signal,
         onProgress,
       });
     } else {
@@ -181,6 +183,7 @@ export async function captureSlides({
         htmlFiles,
         staticServerUrl,
         outputDir,
+        signal,
         onProgress,
       });
     }
@@ -194,6 +197,7 @@ async function captureModeA({
   entryFile,
   staticServerUrl,
   outputDir,
+  signal,
   onProgress,
 }) {
   const page = await context.newPage();
@@ -232,6 +236,8 @@ async function captureModeA({
   await page.setViewportSize({ width: vw, height: vh });
 
   for (let i = 0; i < slideCount; i++) {
+    if (signal?.aborted) throw new Error('Job aborted');
+
     // Isolate current slide: hide all others, make current fill viewport
     await page.evaluate(
       ({ index, width, height }) => {
@@ -284,6 +290,7 @@ async function captureModeB({
   htmlFiles,
   staticServerUrl,
   outputDir,
+  signal,
   onProgress,
 }) {
   const page = await context.newPage();
@@ -327,6 +334,8 @@ async function captureModeB({
     await injectQualityCSS(page);
 
     for (let s = 0; s < dims.slideCount; s++) {
+      if (signal?.aborted) throw new Error('Job aborted');
+
       // Scroll to the correct position for this slide
       const scrollY = s * dims.slideHeight;
       await page.evaluate((y) => window.scrollTo(0, y), scrollY);
