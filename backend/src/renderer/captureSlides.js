@@ -347,6 +347,49 @@ async function captureModeA({
   await page.close();
 }
 
+/**
+ * Tag slide elements in the DOM with data-sf-slide attributes for element-level screenshots.
+ * Returns the number of tagged slides.
+ */
+async function tagSlideElements(page, dims) {
+  return page.evaluate(({ width, height }) => {
+    let slides = [];
+
+    // Strategy 1: elements with page-break-after matching @page dimensions
+    const all = document.body.querySelectorAll('*');
+    for (const el of all) {
+      const style = getComputedStyle(el);
+      const hasBreak =
+        style.pageBreakAfter === 'always' || style.breakAfter === 'page';
+      if (
+        hasBreak &&
+        Math.abs(el.offsetWidth - width) <= 4 &&
+        Math.abs(el.offsetHeight - height) <= 4
+      ) {
+        slides.push(el);
+      }
+    }
+
+    // Strategy 2: visible body children matching slide height
+    if (slides.length === 0) {
+      slides = Array.from(document.body.children).filter((el) => {
+        const s = getComputedStyle(el);
+        return s.display !== 'none' && Math.abs(el.offsetHeight - height) <= 4;
+      });
+    }
+
+    // Strategy 3: all visible body children
+    if (slides.length === 0) {
+      slides = Array.from(document.body.children).filter((el) => {
+        return getComputedStyle(el).display !== 'none' && el.offsetHeight > 50;
+      });
+    }
+
+    slides.forEach((el, i) => el.setAttribute('data-sf-slide', String(i)));
+    return slides.length;
+  }, { width: dims.width, height: dims.slideHeight });
+}
+
 async function captureModeB({
   context,
   htmlFiles,
@@ -389,29 +432,50 @@ async function captureModeB({
       'Capturing file'
     );
 
-    // Navigate to the file again for capture
-    await page.setViewportSize({ width: dims.width, height: dims.slideHeight });
+    // Navigate to the file again for capture — use tall viewport so all slides render
+    await page.setViewportSize({ width: dims.width, height: 10000 });
     await page.goto(url, { waitUntil: 'load', timeout: SLIDE_TIMEOUT });
     await waitForSlideReady(page);
     await injectQualityCSS(page);
 
-    for (let s = 0; s < dims.slideCount; s++) {
+    // Normalize body layout so slides render cleanly
+    await page.addStyleTag({
+      content: 'body { margin: 0 !important; padding: 0 !important; gap: 0 !important; }',
+    });
+
+    // Tag slide elements for per-element screenshots
+    const taggedCount = await tagSlideElements(page, dims);
+    const slidesToCapture = taggedCount > 0 ? taggedCount : dims.slideCount;
+
+    logger.debug({ taggedCount, slidesToCapture }, 'Tagged slide elements');
+
+    for (let s = 0; s < slidesToCapture; s++) {
       if (signal?.aborted) throw new Error('Job aborted');
 
-      // Scroll to the correct position for this slide
-      const scrollY = s * dims.slideHeight;
-      await page.evaluate((y) => window.scrollTo(0, y), scrollY);
-
-      // Brief settle after scroll
-      await page.waitForTimeout(100);
-
       const outputPath = path.join(outputDir, `slide-${padNumber(globalSlideIndex + 1)}.png`);
-      const pngBuffer = await page.screenshot({
-        type: 'png',
-        clip: { x: 0, y: 0, width: dims.width, height: dims.slideHeight },
-        animations: 'disabled',
-        caret: 'hide',
-      });
+
+      let pngBuffer;
+      if (taggedCount > 0) {
+        // Element screenshot — captures exactly the slide element, no scroll math needed
+        const slideEl = page.locator(`[data-sf-slide="${s}"]`);
+        pngBuffer = await slideEl.screenshot({
+          type: 'png',
+          animations: 'disabled',
+          caret: 'hide',
+        });
+      } else {
+        // Fallback: scroll+clip for single-page HTML without identifiable slide elements
+        const scrollY = s * dims.slideHeight;
+        await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+        await page.waitForTimeout(100);
+        pngBuffer = await page.screenshot({
+          type: 'png',
+          clip: { x: 0, y: 0, width: dims.width, height: dims.slideHeight },
+          animations: 'disabled',
+          caret: 'hide',
+        });
+      }
+
       await postProcessPng(pngBuffer, outputPath);
 
       globalSlideIndex++;
